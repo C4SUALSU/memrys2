@@ -1,0 +1,20 @@
+# Supabase CLI Configuration
+project_id = "geslobllyofmzxnyyeby"
+
+[api]
+enabled = true
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/calendar"]
+
+[functions.parse-brain-dump]
+enabled = true
+verify_jwt = true
