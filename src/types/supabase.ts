@@ -240,6 +240,10 @@ export interface Database {
         };
         Returns: void;
       };
+      delete_own_account: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
     };
   };
 }

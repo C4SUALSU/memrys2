@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router';
-import { Mail, LogIn, Key, Globe, Settings, Shield, Brain, ArrowLeft } from 'lucide-react';
+import { useSearchParams, useNavigate } from 'react-router';
+import { Mail, LogIn, Key, Globe, Settings, Shield, Brain, ArrowLeft, AlertTriangle } from 'lucide-react';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
+import { Modal } from './ui/Modal';
 import { TimezonePicker } from './TimezonePicker';
 import { ModelConfigPanel } from './ModelConfigPanel';
 import { useAuth } from '@/context/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
 import { useToast } from '@/context/ToastContext';
+import { supabase } from '@/lib/supabase';
 
 type SettingsTab = 'auth' | 'timezone' | 'models';
 
@@ -18,9 +20,28 @@ export function AuthAndSettings() {
   const { user, signIn, signUp, resetPassword, signOut } = useAuth();
   const { profile, saving, updateProfile } = useProfile();
   const toast = useToast();
+  const navigate = useNavigate();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const setTab = (tab: SettingsTab) => {
     setSearchParams({ tab });
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    const { error } = await supabase.rpc('delete_own_account');
+    if (error) {
+      toast.error(error.message);
+      setDeleting(false);
+      return;
+    }
+    toast.success('Account deleted successfully.');
+    setShowDeleteModal(false);
+    setDeleteConfirmText('');
+    await signOut().catch(() => {});
+    navigate('/');
   };
 
   if (!user) {
@@ -87,12 +108,61 @@ export function AuthAndSettings() {
                 </div>
               </div>
 
-              <div>
-                <h4 className="text-sm font-medium text-zinc-300 mb-3">Danger Zone</h4>
-                <Button variant="danger" onClick={() => signOut()}>
-                  <LogIn className="w-4 h-4" />
-                  Sign Out
-                </Button>
+              {/* Connected Calendars */}
+              <div className="border-t border-zinc-800/50 pt-6">
+                <h3 className="text-base font-semibold text-zinc-200 mb-1">Connected Calendars</h3>
+                <p className="text-sm text-zinc-500 mb-4">Sync events across your devices and services.</p>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-zinc-900/50 border border-zinc-800/30 opacity-60 cursor-not-allowed select-none">
+                    <span className="text-sm text-zinc-400">&#x1F517; Sync with Google Calendar</span>
+                    <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Coming Soon</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-zinc-900/50 border border-zinc-800/30 opacity-60 cursor-not-allowed select-none">
+                    <span className="text-sm text-zinc-400">&#x1F4F1; Sync with Local Device Calendar</span>
+                    <span className="text-[11px] text-zinc-600 uppercase tracking-wider">Coming Soon</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Danger Zone */}
+              <div className="border-t border-red-900/50 pt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <AlertTriangle className="w-4 h-4 text-red-400" />
+                  <h4 className="text-sm font-semibold text-red-400">Danger Zone</h4>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-zinc-900/50 border border-zinc-800/30">
+                    <div>
+                      <p className="text-sm font-medium text-zinc-200">Sign Out</p>
+                      <p className="text-xs text-zinc-500">End your current session</p>
+                    </div>
+                    <Button variant="danger" size="sm" onClick={() => signOut()}>
+                      <LogIn className="w-4 h-4" />
+                      Sign Out
+                    </Button>
+                  </div>
+
+                  <div className="border-t border-zinc-800/50" />
+
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="max-w-sm">
+                      <p className="text-sm font-medium text-zinc-200">Delete Account</p>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Permanently delete your account and all personal data.
+                        Shared spaces with other members will persist without you.
+                      </p>
+                    </div>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => setShowDeleteModal(true)}
+                      className="shrink-0"
+                    >
+                      Delete Account
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -124,6 +194,47 @@ export function AuthAndSettings() {
           )}
         </div>
       </div>
+
+      <Modal open={showDeleteModal} onClose={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }} title="Delete Account">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-red-950/30 border border-red-900/30">
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="text-sm text-zinc-300">
+              <p className="font-medium text-red-300 mb-1">This action cannot be undone</p>
+              <p className="text-zinc-400">
+                Your profile, messages, event attendance, and connections will be permanently removed.
+                Events you created in shared spaces will be preserved without attribution.
+              </p>
+            </div>
+          </div>
+
+          <Input
+            label={'Type "DELETE MY ACCOUNT" to confirm'}
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            placeholder="DELETE MY ACCOUNT"
+            className="w-full"
+          />
+
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={deleteConfirmText !== 'DELETE MY ACCOUNT'}
+              loading={deleting}
+              onClick={handleDeleteAccount}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              Delete Account
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
