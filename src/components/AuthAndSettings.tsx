@@ -49,6 +49,12 @@ export function AuthAndSettings() {
     return <AuthView signIn={signIn} signUp={signUp} resetPassword={resetPassword} defaultTab={authTab === 'signup' ? 'signup' : 'signin'} />;
   }
 
+  // Redirect authenticated users from /login to /app
+  if (window.location.pathname === '/login') {
+    navigate('/app', { replace: true });
+    return null;
+  }
+
   const tabs: { id: SettingsTab; icon: typeof Settings; label: string }[] = [
     { id: 'auth', icon: Key, label: 'Account' },
     { id: 'timezone', icon: Globe, label: 'Timezone' },

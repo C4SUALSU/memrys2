@@ -66,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: {
         data: { display_name: displayName },
-        emailRedirectTo: window.location.origin + '/calendar',
+        emailRedirectTo: window.location.origin + '/app',
       },
     });
     if (!error && data.user) await fetchProfile(data.user.id);
@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = useCallback(async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + '/calendar',
+      redirectTo: window.location.origin + '/app',
     });
     return { error: error?.message ?? null };
   }, []);

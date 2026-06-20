@@ -8,7 +8,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
 
   if (user) {
-    navigate('/calendar', { replace: true });
+    navigate('/app', { replace: true });
     return null;
   }
 

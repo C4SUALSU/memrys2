@@ -1,13 +1,52 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Users, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { FriendList } from '@/components/FriendList';
 import { AddFriendModal } from '@/components/AddFriendModal';
 import { useFriends } from '@/hooks/useFriends';
+import { useTimeTree } from '@/context/TimeTreeContext';
+import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { supabase } from '@/lib/supabase';
+import type { Space } from '@/types/app';
 
 export default function FriendsPage() {
   const { friends, pending, blocked, loading, acceptRequest, rejectRequest, removeFriend, blockUser } = useFriends();
+  const { setCurrentSpace, refreshSpaces } = useTimeTree();
+  const { user } = useAuth();
+  const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
+
+  const handleChatWithFriend = useCallback(async (otherUserId: string) => {
+    if (!user) return;
+
+    const { data: existing } = await supabase
+      .from('spaces')
+      .select('*')
+      .eq('type', 'direct_partner')
+      .or(`created_by.eq.${user.id},id.in.(select space_id from space_members where user_id=eq.${user.id})`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      setCurrentSpace(existing[0] as Space);
+      return;
+    }
+
+    const { data: newSpace, error } = await supabase
+      .from('spaces')
+      .insert({ name: null, type: 'direct_partner', created_by: user.id })
+      .select()
+      .single();
+
+    if (error) {
+      toast.error('Failed to create space');
+      return;
+    }
+
+    await supabase.from('space_members').insert({ space_id: newSpace.id, user_id: otherUserId });
+    await refreshSpaces();
+    setCurrentSpace(newSpace as Space);
+  }, [user, setCurrentSpace, refreshSpaces, toast]);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -39,6 +78,7 @@ export default function FriendsPage() {
             onRemove={removeFriend}
             onBlock={blockUser}
             onAddClick={() => setShowAdd(true)}
+            onChatWithFriend={handleChatWithFriend}
           />
         </div>
       </div>

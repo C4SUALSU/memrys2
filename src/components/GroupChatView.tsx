@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router';
-import { Send, ArrowDown, MessageSquare } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { Send, ArrowDown, MessageSquare, ArrowLeft, Calendar } from 'lucide-react';
 import { ChatMessageCell } from './ChatMessageCell';
 import { BatchActionBar } from './BatchActionBar';
 import { Button } from './ui/Button';
@@ -9,11 +9,18 @@ import { Spinner } from './ui/Spinner';
 import { useChat } from '@/hooks/useChat';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
+import { useTimeTree } from '@/context/TimeTreeContext';
+import type { Space } from '@/types/app';
 
-export function GroupChatView() {
-  const { spaceId } = useParams<{ spaceId: string }>();
+interface GroupChatViewProps {
+  currentSpace: Space;
+}
+
+export function GroupChatView({ currentSpace }: GroupChatViewProps) {
+  const spaceId = currentSpace.id;
   const { user } = useAuth();
   const { messages, loading, sendMessage } = useChat(spaceId);
+  const { setActiveTab } = useTimeTree();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -90,7 +97,7 @@ export function GroupChatView() {
     setIsSelectionMode(false);
     setSelectedIds(new Set());
 
-    navigate('/calendar', { state: { forwardedText: concatenated, spaceId } });
+    navigate('/app?tab=calendar', { state: { forwardedText: concatenated, spaceId } });
   }, [messages, selectedIds, navigate, spaceId]);
 
   const handleCancelSelection = useCallback(() => {
@@ -98,16 +105,33 @@ export function GroupChatView() {
     setSelectedIds(new Set());
   }, []);
 
-  if (!spaceId) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <EmptyState icon="💬" title="Select a space" description="Choose a space from the sidebar to start chatting" />
-      </div>
-    );
-  }
+  const spaceDisplayName = currentSpace.name || currentSpace.type.replace('_', ' ');
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Chat header */}
+      <div className="glass-surface border-b border-zinc-800/50 px-4 py-3 flex items-center gap-3 shrink-0">
+        <button
+          onClick={() => setActiveTab('calendar', currentSpace.id)}
+          className="text-zinc-400 hover:text-zinc-200 transition-colors"
+          title="Back to Calendar"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-zinc-200 truncate">{spaceDisplayName}</p>
+          <p className="text-xs text-zinc-500">Group Chat</p>
+        </div>
+        <button
+          onClick={() => setActiveTab('calendar', currentSpace.id)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-400
+                     hover:text-zinc-200 hover:bg-zinc-800/50 transition-colors"
+        >
+          <Calendar className="w-3.5 h-3.5" />
+          Calendar
+        </button>
+      </div>
+
       {/* Messages */}
       <div
         ref={scrollContainerRef}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router';
-import { Brain, Calendar as CalendarIcon, Sparkles, AlertCircle } from 'lucide-react';
+import { Brain, Calendar as CalendarIcon, Sparkles, AlertCircle, MessageSquare } from 'lucide-react';
 import { BrainDumpInput } from './BrainDumpInput';
 import { PendingApprovals } from './PendingApprovals';
 import { CalendarView } from './CalendarView';
@@ -11,11 +11,16 @@ import { useModelConfigs } from '@/hooks/useModelConfigs';
 import { useTimezone } from '@/hooks/useTimezone';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
-import type { ParsedEventPayload } from '@/types/app';
+import { useTimeTree } from '@/context/TimeTreeContext';
+import type { Space, ParsedEventPayload } from '@/types/app';
 
 type Tab = 'brain-dump' | 'calendar';
 
-export function CalendarWorkspace() {
+interface CalendarWorkspaceProps {
+  currentSpace: Space | null;
+}
+
+export function CalendarWorkspace({ currentSpace }: CalendarWorkspaceProps) {
   const location = useLocation();
   const forwardedText = (location.state as { forwardedText?: string })?.forwardedText ?? '';
   const forwardedSpaceId = (location.state as { spaceId?: string })?.spaceId ?? null;
@@ -23,9 +28,10 @@ export function CalendarWorkspace() {
   const [activeTab, setActiveTab] = useState<Tab>(forwardedText ? 'brain-dump' : 'calendar');
   const [brainDumpText, setBrainDumpText] = useState(forwardedText);
   const { results, isProcessing, error, parse, acceptEvent, reset } = useBrainDump();
-  const { events: calendarEvents, createEvent, fetchEvents } = useCalendarEvents(null);
+  const { events: calendarEvents, createEvent, fetchEvents } = useCalendarEvents(currentSpace?.id ?? null);
   const { profile, user } = useAuth();
   const { configs, getGlobalKey, getDecryptedKey } = useModelConfigs();
+  const { setActiveTab: setGlobalTab } = useTimeTree();
   const toast = useToast();
 
   useEffect(() => {
@@ -73,7 +79,7 @@ export function CalendarWorkspace() {
   };
 
   const handleAccept = async (event: ParsedEventPayload, tag: string) => {
-    const result = await acceptEvent(event, null, tag);
+    const result = await acceptEvent(event, currentSpace?.id ?? null, tag);
     if (!result.error) {
       toast.success(`"${event.title}" added to ${tag} events`);
       fetchEvents();
@@ -100,11 +106,17 @@ export function CalendarWorkspace() {
       start_time: eventData.startTime,
       end_time: eventData.endTime,
       is_all_day: eventData.isAllDay,
-      space_id: eventData.spaceId,
+      space_id: eventData.spaceId ?? currentSpace?.id ?? null,
       created_by: user.id,
     });
     return { error: result.error };
-  }, [user, createEvent]);
+  }, [user, createEvent, currentSpace]);
+
+  const spaceTypeLabels: Record<string, string> = {
+    direct_partner: 'Partner Calendar',
+    group_chat: 'Group Calendar',
+    family_circle: 'Family Calendar',
+  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -113,10 +125,28 @@ export function CalendarWorkspace() {
           <div className="w-10 h-10 rounded-xl bg-brand-900/50 border border-brand-800/50 flex items-center justify-center">
             <CalendarIcon className="w-5 h-5 text-brand-300" />
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-zinc-100">Calendar</h1>
-            <p className="text-sm text-zinc-500">Brain dump or manually schedule your events</p>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl font-semibold text-zinc-100">
+              {currentSpace
+                ? currentSpace.name || spaceTypeLabels[currentSpace.type] || 'Space Calendar'
+                : 'Personal Calendar'}
+            </h1>
+            <p className="text-sm text-zinc-500">
+              {currentSpace
+                ? `${currentSpace.type.replace('_', ' ')} — brain dump or manually schedule events`
+                : 'Brain dump or manually schedule your events'}
+            </p>
           </div>
+          {currentSpace && (
+            <button
+              onClick={() => setGlobalTab('chat', currentSpace.id)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-zinc-400
+                         hover:text-zinc-200 hover:bg-zinc-800/50 transition-colors border border-zinc-800/50"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Chat
+            </button>
+          )}
         </div>
 
         {/* Tabs */}
@@ -179,7 +209,8 @@ export function CalendarWorkspace() {
 
         {activeTab === 'calendar' && (
           <CalendarView
-            events={calendarEvents.filter((e) => !e.space_id)}
+            events={calendarEvents}
+            spaceId={currentSpace?.id ?? null}
             onAddEvent={handleAddEvent}
           />
         )}

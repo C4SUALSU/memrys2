@@ -15,6 +15,7 @@ import type { CalendarEvent } from '@/types/app';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
+  spaceId: string | null;
   onAddEvent: (event: {
     title: string;
     description: string;
@@ -25,7 +26,7 @@ interface CalendarViewProps {
   }) => Promise<{ error: string | null }>;
 }
 
-export function CalendarView({ events, onAddEvent }: CalendarViewProps) {
+export function CalendarView({ events, spaceId, onAddEvent }: CalendarViewProps) {
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showEventModal, setShowEventModal] = useState(false);

@@ -3,7 +3,6 @@ import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { EmptyState } from './ui/EmptyState';
 import { Spinner } from './ui/Spinner';
-import { useNavigate } from 'react-router';
 import type { FriendConnectionWithProfile } from '@/types/app';
 
 interface FriendListProps {
@@ -16,14 +15,10 @@ interface FriendListProps {
   onRemove: (id: string) => Promise<{ error: string | null }>;
   onBlock: (id: string) => Promise<{ error: string | null }>;
   onAddClick: () => void;
+  onChatWithFriend?: (otherUserId: string) => void;
 }
 
-export function FriendList({ friends, pending, blocked, loading, onAccept, onReject, onRemove, onBlock, onAddClick }: FriendListProps) {
-  const navigate = useNavigate();
-
-  const handleChat = (otherUserId: string) => {
-    navigate(`/chat/new?with=${otherUserId}`);
-  };
+export function FriendList({ friends, pending, blocked, loading, onAccept, onReject, onRemove, onBlock, onAddClick, onChatWithFriend }: FriendListProps) {
 
   if (loading) return <Spinner />;
 
@@ -88,7 +83,7 @@ export function FriendList({ friends, pending, blocked, loading, onAccept, onRej
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <Button variant="ghost" size="sm" onClick={() => handleChat(f.other_user_id)}>
+                <Button variant="ghost" size="sm" onClick={() => onChatWithFriend?.(f.other_user_id)}>
                   <MessageSquare className="w-4 h-4" />
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => onBlock(f.id)}>
