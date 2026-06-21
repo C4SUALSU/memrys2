@@ -64,7 +64,16 @@ export function useBrainDump() {
       response.warnings.forEach((w) => toast.warning(w));
     }
 
-    setResults(response.events);
+    const processed = response.events.map((ev) => {
+      const start = new Date(ev.start_time);
+      const end = new Date(ev.end_time);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && (end.getTime() - start.getTime()) < 5 * 60 * 1000) {
+        const oneHourLater = new Date(start.getTime() + 60 * 60 * 1000);
+        return { ...ev, end_time: oneHourLater.toISOString() };
+      }
+      return ev;
+    });
+    setResults(processed);
     if (response.events.length === 0) {
       toast.info('No events found in your text. Try being more specific with dates and times.');
     } else {
@@ -91,14 +100,16 @@ export function useBrainDump() {
     event: ParsedEventPayload,
     spaceId: string | null,
     tag?: string,
+    startTimeOverride?: string,
+    endTimeOverride?: string,
   ) => {
     if (!user) return { error: 'Not authenticated' };
 
     const { error } = await supabase.from('calendar_events').insert({
       title: event.title,
       description: event.description,
-      start_time: event.start_time,
-      end_time: event.end_time,
+      start_time: startTimeOverride ?? event.start_time,
+      end_time: endTimeOverride ?? event.end_time,
       is_all_day: event.is_all_day,
       space_id: spaceId,
       created_by: user.id,

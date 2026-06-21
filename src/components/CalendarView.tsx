@@ -10,6 +10,7 @@ import {
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { EventModal } from './EventModal';
+import { useTimezone } from '@/hooks/useTimezone';
 import { useToast } from '@/context/ToastContext';
 import type { CalendarEvent } from '@/types/app';
 
@@ -24,12 +25,22 @@ interface CalendarViewProps {
     isAllDay: boolean;
     spaceId: string | null;
   }) => Promise<{ error: string | null }>;
+  onUpdateEvent?: (eventId: string, updates: {
+    title: string;
+    description: string;
+    startTime: string;
+    endTime: string;
+    isAllDay: boolean;
+    spaceId: string | null;
+  }) => Promise<{ error: string | null }>;
 }
 
-export function CalendarView({ events, spaceId, onAddEvent }: CalendarViewProps) {
+export function CalendarView({ events, spaceId, onAddEvent, onUpdateEvent }: CalendarViewProps) {
+  const { toLocal } = useTimezone();
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const toast = useToast();
 
@@ -81,6 +92,14 @@ export function CalendarView({ events, spaceId, onAddEvent }: CalendarViewProps)
 
   const handleAddOnDay = (day: Date) => {
     setSelectedDate(day);
+    setEditingEvent(null);
+    setShowEventModal(true);
+  };
+
+  const handleEventClick = (e: React.MouseEvent, ev: CalendarEvent) => {
+    e.stopPropagation();
+    setSelectedDate(parseISO(ev.start_time));
+    setEditingEvent(ev);
     setShowEventModal(true);
   };
 
@@ -170,10 +189,11 @@ export function CalendarView({ events, spaceId, onAddEvent }: CalendarViewProps)
                     return (
                       <div
                         key={ev.id}
-                        className={`text-[10px] leading-tight px-1 py-0.5 rounded truncate border ${color}`}
+                        onClick={(e) => handleEventClick(e, ev)}
+                        className={`text-[10px] leading-tight px-1 py-0.5 rounded truncate border ${color} hover:opacity-80 transition-opacity cursor-pointer`}
                         title={ev.title}
                       >
-                        {ev.is_all_day ? ev.title : `${format(parseISO(ev.start_time), 'h:mm a')} ${ev.title}`}
+                        {ev.is_all_day ? ev.title : `${toLocal(ev.start_time, 'h:mm a')} ${ev.title}`}
                       </div>
                     );
                   })}
@@ -215,13 +235,17 @@ export function CalendarView({ events, spaceId, onAddEvent }: CalendarViewProps)
                 };
                 const dotColor = dotColors[tag] || dotColors.personal;
                 return (
-                  <div key={ev.id} className="flex items-start gap-3 p-3 rounded-xl bg-zinc-800/40 border border-zinc-800/50">
+                  <div
+                    key={ev.id}
+                    onClick={(e) => handleEventClick(e, ev)}
+                    className="flex items-start gap-3 p-3 rounded-xl bg-zinc-800/40 border border-zinc-800/50 hover:bg-zinc-700/40 transition-colors cursor-pointer"
+                  >
                     <div className={`w-2 h-2 rounded-full ${dotColor} mt-1.5 shrink-0`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-zinc-200">{ev.title}</p>
                       <p className="text-xs text-zinc-500">
                         <Clock className="w-3 h-3 inline mr-1" />
-                        {ev.is_all_day ? 'All day' : `${format(parseISO(ev.start_time), 'h:mm a')} – ${format(parseISO(ev.end_time), 'h:mm a')}`}
+                        {ev.is_all_day ? 'All day' : `${toLocal(ev.start_time, 'h:mm a')} – ${toLocal(ev.end_time, 'h:mm a')}`}
                       </p>
                       {ev.description && (
                         <p className="text-xs text-zinc-600 mt-1 line-clamp-2">{ev.description}</p>
@@ -237,8 +261,10 @@ export function CalendarView({ events, spaceId, onAddEvent }: CalendarViewProps)
 
       <EventModal
         open={showEventModal}
-        onClose={() => setShowEventModal(false)}
+        onClose={() => { setShowEventModal(false); setEditingEvent(null); }}
         onSave={onAddEvent}
+        onUpdate={onUpdateEvent}
+        eventToEdit={editingEvent}
         defaultDate={selectedDate || undefined}
       />
     </div>

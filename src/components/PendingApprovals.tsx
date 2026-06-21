@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Check, X, Calendar, Clock, User, Heart, Users, Globe } from 'lucide-react';
+import { fromZonedTime } from 'date-fns-tz';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
+import { Input } from './ui/Input';
 import { useTimezone } from '@/hooks/useTimezone';
 import type { ParsedEventPayload } from '@/types/app';
 
@@ -16,17 +18,49 @@ const TAG_COLORS: Record<EventTag, { dot: string; bg: string; border: string; te
 
 interface PendingApprovalsProps {
   events: ParsedEventPayload[];
-  onAccept: (event: ParsedEventPayload, tag: EventTag) => Promise<void>;
+  onAccept: (event: ParsedEventPayload, tag: EventTag, startTimeOverride?: string, endTimeOverride?: string) => Promise<void>;
   onReject: (event: ParsedEventPayload) => void;
   isProcessing?: boolean;
 }
 
 export function PendingApprovals({ events, onAccept, onReject, isProcessing }: PendingApprovalsProps) {
-  const { formatEventTime } = useTimezone();
+  const { formatEventTime, toLocalDate, tz } = useTimezone();
   const [tags, setTags] = useState<Record<number, EventTag>>({});
+  const [editTimes, setEditTimes] = useState<Record<number, { start: string; end: string }>>({});
 
   const setTag = (idx: number, tag: EventTag) => {
     setTags((prev) => ({ ...prev, [idx]: tag }));
+  };
+
+  const toLocalInput = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${h}:${min}`;
+  };
+
+  useEffect(() => {
+    const init: Record<number, { start: string; end: string }> = {};
+    events.forEach((ev, i) => {
+      init[i] = {
+        start: toLocalInput(toLocalDate(ev.start_time)),
+        end: toLocalInput(toLocalDate(ev.end_time)),
+      };
+    });
+    setEditTimes(init);
+  }, [events]);
+
+  const handleAcceptClick = (event: ParsedEventPayload, tag: EventTag, i: number) => {
+    const edited = editTimes[i];
+    if (edited) {
+      const startUTC = fromZonedTime(new Date(edited.start), tz).toISOString();
+      const endUTC = fromZonedTime(new Date(edited.end), tz).toISOString();
+      onAccept(event, tag, startUTC, endUTC);
+    } else {
+      onAccept(event, tag);
+    }
   };
 
   if (events.length === 0) return null;
@@ -44,6 +78,7 @@ export function PendingApprovals({ events, onAccept, onReject, isProcessing }: P
         {events.map((event, i) => {
           const activeTag = tags[i] ?? 'personal';
           const tc = TAG_COLORS[activeTag];
+          const times = editTimes[i];
 
           return (
             <div key={`${event.title}-${event.start_time}-${i}`}
@@ -58,9 +93,47 @@ export function PendingApprovals({ events, onAccept, onReject, isProcessing }: P
                     <span className={`text-xs font-medium ${tc.text}`}>{tc.label}</span>
                     {event.is_all_day && <Badge>All day</Badge>}
                   </div>
-                  <p className="text-xs text-zinc-500 mb-2">
-                    {formatEventTime(event.start_time, event.end_time, event.is_all_day)}
-                  </p>
+
+                  {/* Editable date/time fields */}
+                  {times && (
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      {event.is_all_day ? (
+                        <>
+                          <Input
+                            label="Start Date"
+                            type="date"
+                            value={times.start.slice(0, 10)}
+                            onChange={(e) => setEditTimes((prev) => ({ ...prev, [i]: { ...prev[i], start: e.target.value + 'T00:00' } }))}
+                            className="text-xs"
+                          />
+                          <Input
+                            label="End Date"
+                            type="date"
+                            value={times.end.slice(0, 10)}
+                            onChange={(e) => setEditTimes((prev) => ({ ...prev, [i]: { ...prev[i], end: e.target.value + 'T23:59' } }))}
+                            className="text-xs"
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <Input
+                            label="Start"
+                            type="datetime-local"
+                            value={times.start}
+                            onChange={(e) => setEditTimes((prev) => ({ ...prev, [i]: { ...prev[i], start: e.target.value } }))}
+                            className="text-xs"
+                          />
+                          <Input
+                            label="End"
+                            type="datetime-local"
+                            value={times.end}
+                            onChange={(e) => setEditTimes((prev) => ({ ...prev, [i]: { ...prev[i], end: e.target.value } }))}
+                            className="text-xs"
+                          />
+                        </>
+                      )}
+                    </div>
+                  )}
 
                   {/* Tag selector */}
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -86,7 +159,7 @@ export function PendingApprovals({ events, onAccept, onReject, isProcessing }: P
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0 self-start">
-                  <Button variant="primary" size="sm" onClick={() => onAccept(event, activeTag)} disabled={isProcessing}>
+                  <Button variant="primary" size="sm" onClick={() => handleAcceptClick(event, activeTag, i)} disabled={isProcessing}>
                     <Check className="w-3.5 h-3.5" />
                     Accept
                   </Button>

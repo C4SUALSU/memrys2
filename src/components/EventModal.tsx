@@ -1,13 +1,14 @@
-import { useState } from 'react';
-import { Plus, Calendar, Clock, X } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Pencil, Calendar, Clock, X, AlertTriangle } from 'lucide-react';
+import { fromZonedTime } from 'date-fns-tz';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Select } from './ui/Select';
 import { Modal } from './ui/Modal';
-import { useAuth } from '@/context/AuthContext';
 import { useSpaces } from '@/hooks/useSpaces';
 import { useTimezone } from '@/hooks/useTimezone';
 import { useToast } from '@/context/ToastContext';
+import type { CalendarEvent } from '@/types/app';
 
 interface EventModalProps {
   open: boolean;
@@ -20,16 +21,25 @@ interface EventModalProps {
     isAllDay: boolean;
     spaceId: string | null;
   }) => Promise<{ error: string | null }>;
+  onUpdate?: (eventId: string, updates: {
+    title: string;
+    description: string;
+    startTime: string;
+    endTime: string;
+    isAllDay: boolean;
+    spaceId: string | null;
+  }) => Promise<{ error: string | null }>;
+  eventToEdit?: CalendarEvent | null;
   defaultDate?: Date;
 }
 
-export function EventModal({ open, onClose, onSave, defaultDate }: EventModalProps) {
+export function EventModal({ open, onClose, onSave, onUpdate, eventToEdit, defaultDate: defaultDateProp }: EventModalProps) {
   const { spaces } = useSpaces();
-  const { tz, nowInTz } = useTimezone();
+  const { tz, nowInTz, toLocalDate } = useTimezone();
   const toast = useToast();
 
-  const defaultStart = defaultDate
-    ? new Date(defaultDate.getFullYear(), defaultDate.getMonth(), defaultDate.getDate(), 9, 0)
+  const defaultStart = defaultDateProp
+    ? new Date(defaultDateProp.getFullYear(), defaultDateProp.getMonth(), defaultDateProp.getDate(), 9, 0)
     : new Date(nowInTz().getFullYear(), nowInTz().getMonth(), nowInTz().getDate(), 9, 0);
   const defaultEnd = new Date(defaultStart.getTime() + 3600000);
 
@@ -49,6 +59,88 @@ export function EventModal({ open, onClose, onSave, defaultDate }: EventModalPro
   const [isAllDay, setIsAllDay] = useState(false);
   const [spaceId, setSpaceId] = useState<string>('personal');
   const [saving, setSaving] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const isEditing = !!eventToEdit;
+
+  const initialRef = useRef({ title: '', description: '', startStr: '', endStr: '', isAllDay: false, spaceId: 'personal' });
+  const userEditedEnd = useRef(false);
+
+  const addOneHour = (dtStr: string) => {
+    const d = new Date(dtStr);
+    if (isNaN(d.getTime())) return dtStr;
+    d.setHours(d.getHours() + 1);
+    return toLocalInput(d);
+  };
+
+  const handleStartChange = (value: string) => {
+    setStartStr(value);
+    if (!userEditedEnd.current && !isAllDay) {
+      setEndStr(addOneHour(value));
+    }
+  };
+
+  const handleEndChange = (value: string) => {
+    userEditedEnd.current = true;
+    setEndStr(value);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setShowDiscardConfirm(false);
+    if (eventToEdit) {
+      setTitle(eventToEdit.title);
+      setDescription(eventToEdit.description);
+      setIsAllDay(eventToEdit.is_all_day);
+      setSpaceId(eventToEdit.space_id ?? 'personal');
+      const startLocal = toLocalDate(eventToEdit.start_time);
+      const endLocal = toLocalDate(eventToEdit.end_time);
+      const s = toLocalInput(startLocal);
+      const e = toLocalInput(endLocal);
+      setStartStr(s);
+      setEndStr(e);
+      initialRef.current = { title: eventToEdit.title, description: eventToEdit.description, startStr: s, endStr: e, isAllDay: eventToEdit.is_all_day, spaceId: eventToEdit.space_id ?? 'personal' };
+      userEditedEnd.current = true;
+    } else {
+      setTitle('');
+      setDescription('');
+      setIsAllDay(false);
+      setSpaceId('personal');
+      const s = defaultDateProp
+        ? new Date(defaultDateProp.getFullYear(), defaultDateProp.getMonth(), defaultDateProp.getDate(), 9, 0)
+        : new Date(nowInTz().getFullYear(), nowInTz().getMonth(), nowInTz().getDate(), 9, 0);
+      const e = new Date(s.getTime() + 3600000);
+      const startVal = toLocalInput(s);
+      const endVal = toLocalInput(e);
+      setStartStr(startVal);
+      setEndStr(endVal);
+      initialRef.current = { title: '', description: '', startStr: startVal, endStr: endVal, isAllDay: false, spaceId: 'personal' };
+      userEditedEnd.current = false;
+    }
+  }, [open, eventToEdit]);
+
+  const isDirty = () => {
+    const init = initialRef.current;
+    return title !== init.title
+      || description !== init.description
+      || startStr !== init.startStr
+      || endStr !== init.endStr
+      || isAllDay !== init.isAllDay
+      || spaceId !== init.spaceId;
+  };
+
+  const handleRequestClose = () => {
+    if (isDirty()) {
+      setShowDiscardConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleDiscard = () => {
+    setShowDiscardConfirm(false);
+    onClose();
+  };
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -63,20 +155,26 @@ export function EventModal({ open, onClose, onSave, defaultDate }: EventModalPro
       setSaving(false);
       return;
     }
-    const startUTC = startLocal.toISOString();
-    const endUTC = endLocal.toISOString();
-    const result = await onSave({
+    if (endLocal < startLocal) {
+      toast.warning('End time cannot be before start time');
+      setSaving(false);
+      return;
+    }
+    const startUTC = fromZonedTime(startLocal, tz).toISOString();
+    const endUTC = fromZonedTime(endLocal, tz).toISOString();
+    const eventData = {
       title: title.trim(),
       description: description.trim(),
       startTime: startUTC,
       endTime: endUTC,
       isAllDay,
       spaceId: spaceId === 'personal' ? null : spaceId,
-    });
+    };
+    const result = isEditing && onUpdate
+      ? await onUpdate(eventToEdit.id, eventData)
+      : await onSave(eventData);
     setSaving(false);
     if (!result.error) {
-      setTitle('');
-      setDescription('');
       onClose();
     }
   };
@@ -86,8 +184,33 @@ export function EventModal({ open, onClose, onSave, defaultDate }: EventModalPro
     ...spaces.map((s) => ({ value: s.id, label: s.name || s.type.replace('_', ' ') })),
   ];
 
+  if (showDiscardConfirm) {
+    return (
+      <Modal open={open} onClose={() => setShowDiscardConfirm(false)} title="Unsaved Changes">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-950/30 border border-amber-900/30">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-sm text-zinc-300">
+              <p className="font-medium text-amber-300 mb-1">You have unsaved changes</p>
+              <p className="text-zinc-400">Are you sure you want to discard them?</p>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" onClick={() => setShowDiscardConfirm(false)}>
+              Keep Editing
+            </Button>
+            <Button variant="danger" onClick={handleDiscard}>
+              <X className="w-4 h-4" />
+              Discard Changes
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
-    <Modal open={open} onClose={onClose} title="Add Event">
+    <Modal open={open} onClose={handleRequestClose} title={isEditing ? 'Edit Event' : 'Add Event'}>
       <div className="flex flex-col gap-4">
         <Input
           label="Title"
@@ -115,14 +238,14 @@ export function EventModal({ open, onClose, onSave, defaultDate }: EventModalPro
         </div>
         {!isAllDay && (
           <div className="grid grid-cols-2 gap-3">
-            <Input label="Start" type="datetime-local" value={startStr} onChange={(e) => setStartStr(e.target.value)} />
-            <Input label="End" type="datetime-local" value={endStr} onChange={(e) => setEndStr(e.target.value)} />
+            <Input label="Start" type="datetime-local" value={startStr} onChange={(e) => handleStartChange(e.target.value)} />
+            <Input label="End" type="datetime-local" value={endStr} onChange={(e) => handleEndChange(e.target.value)} />
           </div>
         )}
         {isAllDay && (
           <div className="grid grid-cols-2 gap-3">
-            <Input label="Start Date" type="date" value={startStr.slice(0, 10)} onChange={(e) => setStartStr(e.target.value + 'T00:00')} />
-            <Input label="End Date" type="date" value={endStr.slice(0, 10)} onChange={(e) => setEndStr(e.target.value + 'T23:59')} />
+            <Input label="Start Date" type="date" value={startStr.slice(0, 10)} onChange={(e) => handleStartChange(e.target.value + 'T00:00')} />
+            <Input label="End Date" type="date" value={endStr.slice(0, 10)} onChange={(e) => handleEndChange(e.target.value + 'T23:59')} />
           </div>
         )}
         <Select label="Space" value={spaceId} onChange={(e) => setSpaceId(e.target.value)} options={spaceOptions} />
@@ -130,10 +253,10 @@ export function EventModal({ open, onClose, onSave, defaultDate }: EventModalPro
           Times are in your local timezone ({tz.replace(/_/g, ' ')}).
         </div>
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={handleRequestClose}>Cancel</Button>
           <Button onClick={handleSave} loading={saving}>
-            <Plus className="w-4 h-4" />
-            Add Event
+            {isEditing ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {isEditing ? 'Save Changes' : 'Add Event'}
           </Button>
         </div>
       </div>

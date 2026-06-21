@@ -256,6 +256,7 @@ function AuthView({
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   defaultTab: 'signin' | 'signup';
 }) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'signin' | 'signup'>(defaultTab);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -291,7 +292,7 @@ function AuthView({
     const result = await signUp(email.trim(), password, displayName.trim());
     setLoading(false);
     if (result.error) toast.error(result.error);
-    else toast.success('Account created! Check your email to confirm.');
+    else navigate('/check-email');
   };
 
   const handleReset = async () => {

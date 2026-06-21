@@ -28,7 +28,7 @@ export function CalendarWorkspace({ currentSpace }: CalendarWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<Tab>(forwardedText ? 'brain-dump' : 'calendar');
   const [brainDumpText, setBrainDumpText] = useState(forwardedText);
   const { results, isProcessing, error, parse, acceptEvent, reset } = useBrainDump();
-  const { events: calendarEvents, createEvent, fetchEvents } = useCalendarEvents(currentSpace?.id ?? null);
+  const { events: calendarEvents, createEvent, updateEvent, fetchEvents } = useCalendarEvents(currentSpace?.id ?? null);
   const { profile, user } = useAuth();
   const { configs, getGlobalKey, getDecryptedKey } = useModelConfigs();
   const { setActiveTab: setGlobalTab } = useTimeTree();
@@ -78,8 +78,8 @@ export function CalendarWorkspace({ currentSpace }: CalendarWorkspaceProps) {
     reset();
   };
 
-  const handleAccept = async (event: ParsedEventPayload, tag: string) => {
-    const result = await acceptEvent(event, currentSpace?.id ?? null, tag);
+  const handleAccept = async (event: ParsedEventPayload, tag: string, startTimeOverride?: string, endTimeOverride?: string) => {
+    const result = await acceptEvent(event, currentSpace?.id ?? null, tag, startTimeOverride, endTimeOverride);
     if (!result.error) {
       toast.success(`"${event.title}" added to ${tag} events`);
       fetchEvents();
@@ -111,6 +111,25 @@ export function CalendarWorkspace({ currentSpace }: CalendarWorkspaceProps) {
     });
     return { error: result.error };
   }, [user, createEvent, currentSpace]);
+
+  const handleUpdateEvent = useCallback(async (eventId: string, eventData: {
+    title: string;
+    description: string;
+    startTime: string;
+    endTime: string;
+    isAllDay: boolean;
+    spaceId: string | null;
+  }) => {
+    const result = await updateEvent(eventId, {
+      title: eventData.title,
+      description: eventData.description,
+      start_time: eventData.startTime,
+      end_time: eventData.endTime,
+      is_all_day: eventData.isAllDay,
+      space_id: eventData.spaceId ?? currentSpace?.id ?? null,
+    });
+    return { error: result.error };
+  }, [updateEvent, currentSpace]);
 
   const spaceTypeLabels: Record<string, string> = {
     direct_partner: 'Partner Calendar',
@@ -212,6 +231,7 @@ export function CalendarWorkspace({ currentSpace }: CalendarWorkspaceProps) {
             events={calendarEvents}
             spaceId={currentSpace?.id ?? null}
             onAddEvent={handleAddEvent}
+            onUpdateEvent={handleUpdateEvent}
           />
         )}
       </div>
