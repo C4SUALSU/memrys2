@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router';
 import { Brain, Calendar as CalendarIcon, Sparkles, AlertCircle, MessageSquare } from 'lucide-react';
 import { BrainDumpInput } from './BrainDumpInput';
@@ -12,7 +12,8 @@ import { useTimezone } from '@/hooks/useTimezone';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { useTimeTree } from '@/context/TimeTreeContext';
-import type { Space, ParsedEventPayload } from '@/types/app';
+import { supabase } from '@/lib/supabase';
+import type { Space, ParsedEventPayload, CalendarEvent } from '@/types/app';
 
 type Tab = 'brain-dump' | 'calendar';
 
@@ -29,10 +30,76 @@ export function CalendarWorkspace({ currentSpace }: CalendarWorkspaceProps) {
   const [brainDumpText, setBrainDumpText] = useState(forwardedText);
   const { results, isProcessing, error, parse, acceptEvent, reset } = useBrainDump();
   const { events: calendarEvents, createEvent, updateEvent, fetchEvents } = useCalendarEvents(currentSpace?.id ?? null);
-  const { profile, user } = useAuth();
+  const { profile, user, session } = useAuth();
   const { configs, getGlobalKey, getDecryptedKey } = useModelConfigs();
   const { setActiveTab: setGlobalTab } = useTimeTree();
   const toast = useToast();
+
+  const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
+  const [googleSyncLoading, setGoogleSyncLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchGoogleEvents = async () => {
+      const providerToken = session?.provider_token;
+      if (!providerToken || !user) return;
+
+      setGoogleSyncLoading(true);
+      try {
+        const now = new Date().toISOString();
+        const response = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now)}&maxResults=50&singleEvents=true&orderBy=startTime`,
+          {
+            headers: { Authorization: `Bearer ${providerToken}` },
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            console.warn('Google Calendar token expired or invalid');
+          }
+          return;
+        }
+
+        const json = await response.json();
+
+        if (!cancelled) {
+          const transformed: CalendarEvent[] = (json.items || []).map((item: Record<string, unknown>) => {
+            const start = (item.start as Record<string, string>) || {};
+            const end = (item.end as Record<string, string>) || {};
+            return {
+              id: item.id as string,
+              space_id: null,
+              title: (item.summary as string) || 'Untitled',
+              description: (item.description as string) || '',
+              start_time: start.dateTime || start.date || '',
+              end_time: end.dateTime || end.date || '',
+              is_all_day: !start.dateTime,
+              metadata: { source: 'google_calendar', google_event_id: item.id },
+              created_by: user.id,
+              created_at: (item.created as string) || now,
+            };
+          });
+          setGoogleEvents(transformed);
+        }
+      } catch (err) {
+        console.error('Failed to fetch Google Calendar events:', err);
+      } finally {
+        if (!cancelled) setGoogleSyncLoading(false);
+      }
+    };
+
+    fetchGoogleEvents();
+
+    return () => { cancelled = true; };
+  }, [session?.provider_token, user, currentSpace]);
+
+  const mergedEvents = useMemo(() => {
+    const seen = new Set(calendarEvents.map((e) => e.id));
+    const filtered = googleEvents.filter((ge) => !seen.has(ge.id));
+    return [...calendarEvents, ...filtered];
+  }, [calendarEvents, googleEvents]);
 
   useEffect(() => {
     if (forwardedText) {
@@ -227,12 +294,21 @@ export function CalendarWorkspace({ currentSpace }: CalendarWorkspaceProps) {
         )}
 
         {activeTab === 'calendar' && (
-          <CalendarView
-            events={calendarEvents}
-            spaceId={currentSpace?.id ?? null}
-            onAddEvent={handleAddEvent}
-            onUpdateEvent={handleUpdateEvent}
-          />
+          <>
+            {session?.provider_token && (
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${googleSyncLoading ? 'badge text-zinc-400 border-zinc-700' : 'badge-success text-emerald-400 border-emerald-800/30'}`}>
+                  {googleSyncLoading ? 'Syncing Google Calendar...' : `Google Calendar — ${googleEvents.length} events synced`}
+                </span>
+              </div>
+            )}
+            <CalendarView
+              events={mergedEvents}
+              spaceId={currentSpace?.id ?? null}
+              onAddEvent={handleAddEvent}
+              onUpdateEvent={handleUpdateEvent}
+            />
+          </>
         )}
       </div>
     </div>
