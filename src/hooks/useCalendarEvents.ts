@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { CalendarEvent } from '@/types/app';
+import type { CalendarEvent, UserCalendarEvent } from '@/types/app';
 
 export function useCalendarEvents(spaceId?: string | null) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -8,16 +8,29 @@ export function useCalendarEvents(spaceId?: string | null) {
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
-    let query = supabase.from('calendar_events').select('*').order('start_time', { ascending: true });
 
     if (spaceId) {
-      query = query.eq('space_id', spaceId);
-    } else if (spaceId === null) {
-      query = query.is('space_id', null);
+      // Single-space view: query calendar_events directly
+      const query = supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('space_id', spaceId)
+        .order('start_time', { ascending: true });
+
+      const { data, error } = await query;
+      if (!error && data) setEvents(data as CalendarEvent[]);
+    } else {
+      // Personal / merged view: use user_calendar_view which RLS-filters
+      const { data, error } = await supabase
+        .from('user_calendar_view')
+        .select('*')
+        .order('start_time', { ascending: true });
+
+      if (!error && data) {
+        setEvents(data as unknown as CalendarEvent[]);
+      }
     }
 
-    const { data, error } = await query;
-    if (!error && data) setEvents(data as CalendarEvent[]);
     setLoading(false);
   }, [spaceId]);
 
@@ -60,3 +73,5 @@ export function useCalendarEvents(spaceId?: string | null) {
 
   return { events, loading, fetchEvents, createEvent, updateEvent, deleteEvent };
 }
+
+export type { CalendarEvent, UserCalendarEvent };

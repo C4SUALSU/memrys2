@@ -16,9 +16,22 @@ interface FriendListProps {
   onBlock: (id: string) => Promise<{ error: string | null }>;
   onAddClick: () => void;
   onChatWithFriend?: (otherUserId: string) => void;
+  onTagChange?: (connectionId: string, newTag: string) => Promise<void>;
 }
 
-export function FriendList({ friends, pending, blocked, loading, onAccept, onReject, onRemove, onBlock, onAddClick, onChatWithFriend }: FriendListProps) {
+const TAG_OPTIONS = [
+  { value: 'Friend', label: 'Friend 👥' },
+  { value: 'Partner', label: 'Partner 🌹' },
+  { value: 'Family', label: 'Family 🏡' },
+  { value: 'Work', label: 'Work 💼' },
+  { value: 'Other', label: 'Other 🔗' },
+];
+
+export function FriendList({
+  friends, pending, blocked, loading,
+  onAccept, onReject, onRemove, onBlock, onAddClick,
+  onChatWithFriend, onTagChange,
+}: FriendListProps) {
 
   if (loading) return <Spinner />;
 
@@ -80,6 +93,20 @@ export function FriendList({ friends, pending, blocked, loading, onAccept, onRej
                 <div>
                   <p className="text-sm font-medium text-zinc-200">{f.other_display_name}</p>
                   <p className="text-xs text-zinc-500 capitalize">{f.relationship}</p>
+                  {onTagChange && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="text-xs text-zinc-500">Classification:</span>
+                      <select
+                        value={f.relationship_tag || 'Friend'}
+                        onChange={(e) => onTagChange(f.id, e.target.value)}
+                        className="bg-zinc-900 text-zinc-100 border border-zinc-700 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        {TAG_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-1.5">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Pencil, Calendar, Clock, X, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, X, AlertTriangle, Trash2 } from 'lucide-react';
 import { fromZonedTime } from 'date-fns-tz';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -29,13 +29,14 @@ interface EventModalProps {
     isAllDay: boolean;
     spaceId: string | null;
   }) => Promise<{ error: string | null }>;
+  onDelete?: (eventId: string) => Promise<void>;
   eventToEdit?: CalendarEvent | null;
   defaultDate?: Date;
 }
 
-export function EventModal({ open, onClose, onSave, onUpdate, eventToEdit, defaultDate: defaultDateProp }: EventModalProps) {
+export function EventModal({ open, onClose, onSave, onUpdate, onDelete, eventToEdit, defaultDate: defaultDateProp }: EventModalProps) {
   const { spaces } = useSpaces();
-  const { tz, nowInTz, toLocalDate } = useTimezone();
+  const { tz, nowInTz } = useTimezone();
   const toast = useToast();
 
   const defaultStart = defaultDateProp
@@ -60,6 +61,8 @@ export function EventModal({ open, onClose, onSave, onUpdate, eventToEdit, defau
   const [spaceId, setSpaceId] = useState<string>('personal');
   const [saving, setSaving] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const isEditing = !!eventToEdit;
 
@@ -88,13 +91,14 @@ export function EventModal({ open, onClose, onSave, onUpdate, eventToEdit, defau
   useEffect(() => {
     if (!open) return;
     setShowDiscardConfirm(false);
+    setShowDeleteConfirm(false);
     if (eventToEdit) {
       setTitle(eventToEdit.title);
       setDescription(eventToEdit.description);
       setIsAllDay(eventToEdit.is_all_day);
       setSpaceId(eventToEdit.space_id ?? 'personal');
-      const startLocal = toLocalDate(eventToEdit.start_time);
-      const endLocal = toLocalDate(eventToEdit.end_time);
+      const startLocal = new Date(eventToEdit.start_time);
+      const endLocal = new Date(eventToEdit.end_time);
       const s = toLocalInput(startLocal);
       const e = toLocalInput(endLocal);
       setStartStr(s);
@@ -179,6 +183,15 @@ export function EventModal({ open, onClose, onSave, onUpdate, eventToEdit, defau
     }
   };
 
+  const handleDelete = async () => {
+    if (!eventToEdit || !onDelete) return;
+    setDeleting(true);
+    await onDelete(eventToEdit.id);
+    setDeleting(false);
+    setShowDeleteConfirm(false);
+    onClose();
+  };
+
   const spaceOptions = [
     { value: 'personal', label: 'Personal' },
     ...spaces.map((s) => ({ value: s.id, label: s.name || s.type.replace('_', ' ') })),
@@ -202,6 +215,31 @@ export function EventModal({ open, onClose, onSave, onUpdate, eventToEdit, defau
             <Button variant="danger" onClick={handleDiscard}>
               <X className="w-4 h-4" />
               Discard Changes
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (showDeleteConfirm) {
+    return (
+      <Modal open={open} onClose={() => setShowDeleteConfirm(false)} title="Delete Event">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-red-950/30 border border-red-900/30">
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="text-sm text-zinc-300">
+              <p className="font-medium text-red-300 mb-1">Delete &ldquo;{title}&rdquo;?</p>
+              <p className="text-zinc-400">This action cannot be undone.</p>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" onClick={() => setShowDeleteConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleDelete} loading={deleting}>
+              <Trash2 className="w-4 h-4" />
+              Delete Event
             </Button>
           </div>
         </div>
@@ -252,12 +290,22 @@ export function EventModal({ open, onClose, onSave, onUpdate, eventToEdit, defau
         <div className="text-xs text-zinc-500">
           Times are in your local timezone ({tz.replace(/_/g, ' ')}).
         </div>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={handleRequestClose}>Cancel</Button>
-          <Button onClick={handleSave} loading={saving}>
-            {isEditing ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {isEditing ? 'Save Changes' : 'Add Event'}
-          </Button>
+        <div className="flex justify-between gap-2">
+          <div>
+            {isEditing && onDelete && (
+              <Button variant="danger" onClick={() => setShowDeleteConfirm(true)}>
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={handleRequestClose}>Cancel</Button>
+            <Button onClick={handleSave} loading={saving}>
+              {isEditing ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {isEditing ? 'Save Changes' : 'Add Event'}
+            </Button>
+          </div>
         </div>
       </div>
     </Modal>

@@ -10,6 +10,8 @@ import { useChat } from '@/hooks/useChat';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { useTimeTree } from '@/context/TimeTreeContext';
+import { useDiagnosticToast, DiagnosticModal } from '@/hooks/useDiagnosticToast';
+import { supabase } from '@/lib/supabase';
 import type { Space } from '@/types/app';
 
 interface GroupChatViewProps {
@@ -19,9 +21,10 @@ interface GroupChatViewProps {
 export function GroupChatView({ currentSpace }: GroupChatViewProps) {
   const spaceId = currentSpace.id;
   const { user } = useAuth();
-  const { messages, loading, sendMessage } = useChat(spaceId);
+  const { messages, loading, fetchMessages } = useChat(spaceId);
   const { setActiveTab } = useTimeTree();
   const toast = useToast();
+  const { diagnostic, showDiagnosticError, dismissDiagnostic } = useDiagnosticToast();
   const navigate = useNavigate();
 
   const [newMessage, setNewMessage] = useState('');
@@ -49,15 +52,32 @@ export function GroupChatView({ currentSpace }: GroupChatViewProps) {
   }, []);
 
   const handleSend = async () => {
-    if (!newMessage.trim() || !user) return;
+    const text = newMessage.trim();
+    if (!text) return;
+
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) {
+      showDiagnosticError({ message: 'Missing Auth User Context', code: 'CLIENT_ERROR' });
+      return;
+    }
+
     setSending(true);
-    const result = await sendMessage(newMessage.trim(), user.id);
+    const { error } = await supabase
+      .from('chat_messages')
+      .insert({
+        space_id: currentSpace.id,
+        sender_id: currentUser.id,
+        message_text: text,
+      });
     setSending(false);
-    if (result.error) {
-      toast.error(result.error);
+
+    if (error) {
+      console.error('Critical Chat RLS Breakdown:', error);
+      showDiagnosticError(error);
     } else {
       setNewMessage('');
       setAutoScroll(true);
+      fetchMessages();
     }
   };
 
@@ -199,6 +219,11 @@ export function GroupChatView({ currentSpace }: GroupChatViewProps) {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* Diagnostic modal */}
+      {diagnostic && (
+        <DiagnosticModal payload={diagnostic} onDismiss={dismissDiagnostic} />
       )}
     </div>
   );

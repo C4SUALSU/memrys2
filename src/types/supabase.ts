@@ -55,18 +55,21 @@ export interface Database {
           space_id: string;
           user_id: string;
           joined_at: string;
+          relationship_tag: string;
         };
         Insert: {
           id?: string;
           space_id: string;
           user_id: string;
           joined_at?: string;
+          relationship_tag?: string;
         };
         Update: {
           id?: string;
           space_id?: string;
           user_id?: string;
           joined_at?: string;
+          relationship_tag?: string;
         };
       };
       chat_messages: {
@@ -185,6 +188,38 @@ export interface Database {
           created_at?: string;
         };
       };
+      friend_connections: {
+        Row: {
+          id: string;
+          requester_id: string;
+          recipient_id: string;
+          status: string;
+          relationship: string;
+          relationship_tag: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          requester_id: string;
+          recipient_id: string;
+          status?: string;
+          relationship?: string;
+          relationship_tag?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          requester_id?: string;
+          recipient_id?: string;
+          status?: string;
+          relationship?: string;
+          relationship_tag?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       audit_log: {
         Row: {
           id: string;
@@ -215,6 +250,25 @@ export interface Database {
           old_data?: Json | null;
           new_data?: Json | null;
           created_at?: string;
+        };
+      };
+    };
+    Views: {
+      user_calendar_view: {
+        Row: {
+          id: string;
+          space_id: string | null;
+          title: string;
+          description: string;
+          start_time: string;
+          end_time: string;
+          is_all_day: boolean;
+          metadata: Json;
+          created_by: string | null;
+          created_at: string;
+          space_name: string | null;
+          space_type: string | null;
+          relationship_tag: string;
         };
       };
     };

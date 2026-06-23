@@ -1,18 +1,18 @@
 import { useState, useMemo } from 'react';
 import {
-  ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon,
-  Clock, MapPin, ChevronDown, ChevronUp,
+  ChevronLeft, ChevronRight, Plus, Clock,
 } from 'lucide-react';
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths,
   format, isSameDay, isSameMonth, isToday, parseISO, isWithinInterval,
 } from 'date-fns';
 import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
 import { EventModal } from './EventModal';
 import { useTimezone } from '@/hooks/useTimezone';
-import { useToast } from '@/context/ToastContext';
-import type { CalendarEvent } from '@/types/app';
+import {
+  RelationshipTagDisplay,
+  type CalendarEvent, type UserCalendarEvent,
+} from '@/types/app';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
@@ -33,16 +33,16 @@ interface CalendarViewProps {
     isAllDay: boolean;
     spaceId: string | null;
   }) => Promise<{ error: string | null }>;
+  onDeleteEvent?: (eventId: string) => Promise<void>;
 }
 
-export function CalendarView({ events, spaceId, onAddEvent, onUpdateEvent }: CalendarViewProps) {
+export function CalendarView({ events, spaceId, onAddEvent, onUpdateEvent, onDeleteEvent }: CalendarViewProps) {
   const { toLocal } = useTimezone();
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showEventModal, setShowEventModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
-  const toast = useToast();
 
   const prevMonth = () => setCurrentMonth((m) => startOfMonth(addMonths(m, -1)));
   const nextMonth = () => setCurrentMonth((m) => startOfMonth(addMonths(m, 1)));
@@ -78,6 +78,17 @@ export function CalendarView({ events, spaceId, onAddEvent, onUpdateEvent }: Cal
 
   const selectedEvents = selectedDate ? getEventsForDay(selectedDate) : [];
 
+  const getEventTag = (ev: CalendarEvent): string => {
+    const uce = ev as unknown as UserCalendarEvent;
+    if (uce.relationship_tag && uce.relationship_tag !== 'Personal' && uce.relationship_tag in RelationshipTagDisplay) {
+      return uce.relationship_tag;
+    }
+    const metadataTag = (ev.metadata as { tag?: string })?.tag || (ev.metadata as { relationship_tag?: string })?.relationship_tag;
+    if (metadataTag && metadataTag in RelationshipTagDisplay) return metadataTag;
+    if (ev.space_id) return 'Friend';
+    return 'Personal';
+  };
+
   const weekDayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const handleDayClick = (day: Date) => {
@@ -101,6 +112,12 @@ export function CalendarView({ events, spaceId, onAddEvent, onUpdateEvent }: Cal
     setSelectedDate(parseISO(ev.start_time));
     setEditingEvent(ev);
     setShowEventModal(true);
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    if (onDeleteEvent) {
+      await onDeleteEvent(eventId);
+    }
   };
 
   return (
@@ -178,14 +195,9 @@ export function CalendarView({ events, spaceId, onAddEvent, onUpdateEvent }: Cal
                 </div>
                 <div className="flex flex-col gap-0.5">
                   {dayEvents.slice(0, isSelected ? 4 : 2).map((ev) => {
-                    const tag = (ev.metadata as { tag?: string })?.tag || 'personal';
-                    const tagColors: Record<string, string> = {
-                      personal: 'bg-sky-900/50 text-sky-300 border-sky-800/30',
-                      partner: 'bg-rose-900/50 text-rose-300 border-rose-800/30',
-                      family: 'bg-emerald-900/50 text-emerald-300 border-emerald-800/30',
-                      friend: 'bg-amber-900/50 text-amber-300 border-amber-800/30',
-                    };
-                    const color = tagColors[tag] || tagColors.personal;
+                    const tag = getEventTag(ev);
+                    const display = RelationshipTagDisplay[tag] || RelationshipTagDisplay.Personal;
+                    const color = display.color;
                     return (
                       <div
                         key={ev.id}
@@ -226,14 +238,9 @@ export function CalendarView({ events, spaceId, onAddEvent, onUpdateEvent }: Cal
           ) : (
             <div className="flex flex-col gap-2">
               {selectedEvents.map((ev) => {
-                const tag = (ev.metadata as { tag?: string })?.tag || 'personal';
-                const dotColors: Record<string, string> = {
-                  personal: 'bg-sky-400',
-                  partner: 'bg-rose-400',
-                  family: 'bg-emerald-400',
-                  friend: 'bg-amber-400',
-                };
-                const dotColor = dotColors[tag] || dotColors.personal;
+                const tag = getEventTag(ev);
+                const display = RelationshipTagDisplay[tag] || RelationshipTagDisplay.Personal;
+                const dotColor = display.dotColor;
                 return (
                   <div
                     key={ev.id}
@@ -264,6 +271,7 @@ export function CalendarView({ events, spaceId, onAddEvent, onUpdateEvent }: Cal
         onClose={() => { setShowEventModal(false); setEditingEvent(null); }}
         onSave={onAddEvent}
         onUpdate={onUpdateEvent}
+        onDelete={onDeleteEvent ? handleDeleteEvent : undefined}
         eventToEdit={editingEvent}
         defaultDate={selectedDate || undefined}
       />

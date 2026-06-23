@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Brain, Calendar, Settings, Users, Plus, LogOut, MessageSquare,
-  LayoutDashboard, Menu, X,
+  LayoutDashboard, X, Trash2, Edit3, MoreHorizontal,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useTimeTree } from '@/context/TimeTreeContext';
@@ -51,6 +51,92 @@ export function NavigationSidebar({ open, onClose }: NavigationSidebarProps) {
   const [spaceType, setSpaceType] = useState<SpaceType>('group_chat');
   const [creating, setCreating] = useState(false);
 
+  const [contextMenu, setContextMenu] = useState<{ space: Space; x: number; y: number } | null>(null);
+  const [renamingSpace, setRenamingSpace] = useState<Space | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [savingRename, setSavingRename] = useState(false);
+  const [deletingSpace, setDeletingSpace] = useState<Space | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const contextRef = useRef<HTMLDivElement>(null);
+
+  // Close context menu on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (contextRef.current && !contextRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    if (contextMenu) {
+      document.addEventListener('mousedown', handleClick);
+    }
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [contextMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent, space: Space) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ space, x: e.clientX, y: e.clientY });
+  };
+
+  const isOwner = (userId: string | undefined, space: Space): boolean => {
+    return space.created_by === userId;
+  };
+
+  const handleStartRename = (space: Space) => {
+    setRenamingSpace(space);
+    setRenameValue(space.name ?? '');
+    setContextMenu(null);
+  };
+
+  const handleSaveRename = async () => {
+    if (!renamingSpace) return;
+    setSavingRename(true);
+    const { error } = await supabase
+      .from('spaces')
+      .update({ name: renameValue.trim() || null })
+      .eq('id', renamingSpace.id);
+    setSavingRename(false);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Space renamed');
+      setRenamingSpace(null);
+      setRenameValue('');
+      await refreshSpaces();
+    }
+  };
+
+  const handleCancelRename = () => {
+    setRenamingSpace(null);
+    setRenameValue('');
+  };
+
+  const handleStartDelete = (space: Space) => {
+    setDeletingSpace(space);
+    setContextMenu(null);
+  };
+
+  const handleDeleteSpace = async () => {
+    if (!deletingSpace) return;
+    setDeleting(true);
+    const { error } = await supabase
+      .from('spaces')
+      .delete()
+      .eq('id', deletingSpace.id);
+    setDeleting(false);
+    setDeletingSpace(null);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Space deleted');
+      if (currentSpace?.id === deletingSpace.id) {
+        setCurrentSpace(null);
+      }
+      await refreshSpaces();
+    }
+  };
+
   const handleCreateSpace = async () => {
     if (!user) return;
     setCreating(true);
@@ -65,6 +151,12 @@ export function NavigationSidebar({ open, onClose }: NavigationSidebarProps) {
       toast.error(error.message);
     } else if (data) {
       toast.success('Space created');
+
+      // Auto-join the creator as a member
+      await supabase
+        .from('space_members')
+        .insert({ space_id: data.id, user_id: user.id, relationship_tag: 'Friend' });
+
       setShowCreateSpace(false);
       setSpaceName('');
       await refreshSpaces();
@@ -180,18 +272,26 @@ export function NavigationSidebar({ open, onClose }: NavigationSidebarProps) {
             {spacesList.map((space) => {
               const isActive = currentSpace?.id === space.id && activeTab === 'calendar';
               return (
-                <button
-                  key={space.id}
-                  onClick={() => { setCurrentSpace(space); onClose(); }}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors
-                    ${isActive ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
-                >
-                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${spaceTypeColors[space.type]}`} />
-                  <span className="truncate">{spaceDisplayName(space)}</span>
-                  {currentSpace?.id === space.id && activeTab === 'chat' && (
-                    <MessageSquare className="w-3.5 h-3.5 text-zinc-500 ml-auto shrink-0" />
-                  )}
-                </button>
+                <div key={space.id} className="relative group">
+                  <button
+                    onClick={() => { setCurrentSpace(space); onClose(); }}
+                    onContextMenu={(e) => handleContextMenu(e, space)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors
+                      ${isActive ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${spaceTypeColors[space.type]}`} />
+                    <span className="truncate flex-1 text-left">{spaceDisplayName(space)}</span>
+                    {currentSpace?.id === space.id && activeTab === 'chat' && (
+                      <MessageSquare className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                    )}
+                    <button
+                      onClick={(e) => handleContextMenu(e, space)}
+                      className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-zinc-200 transition-all shrink-0"
+                    >
+                      <MoreHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                  </button>
+                </div>
               );
             })}
             {spacesList.length === 0 && (
@@ -230,6 +330,70 @@ export function NavigationSidebar({ open, onClose }: NavigationSidebarProps) {
           </button>
         </div>
       </aside>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={contextRef}
+          className="fixed z-50 w-44 rounded-xl bg-zinc-900 border border-zinc-700/50 shadow-xl py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            onClick={() => handleStartRename(contextMenu.space)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            Rename
+          </button>
+          {isOwner(user?.id, contextMenu.space) && (
+            <button
+              onClick={() => handleStartDelete(contextMenu.space)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-950/30 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Rename space modal */}
+      <Modal open={!!renamingSpace} onClose={handleCancelRename} title="Rename Space">
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Space name"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="Enter new name"
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRename(); if (e.key === 'Escape') handleCancelRename(); }}
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={handleCancelRename}>Cancel</Button>
+            <Button onClick={handleSaveRename} loading={savingRename}>
+              <Edit3 className="w-4 h-4" />
+              Rename
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete space confirmation modal */}
+      <Modal open={!!deletingSpace} onClose={() => setDeletingSpace(null)} title="Delete Space">
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-zinc-300">
+            Are you sure you want to delete <strong>{deletingSpace ? spaceDisplayName(deletingSpace) : ''}</strong>?
+            All events, messages, and member data will be permanently removed.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDeletingSpace(null)}>Cancel</Button>
+            <Button variant="danger" onClick={handleDeleteSpace} loading={deleting}>
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Create space modal */}
       <Modal open={showCreateSpace} onClose={() => setShowCreateSpace(false)} title="Create Space">

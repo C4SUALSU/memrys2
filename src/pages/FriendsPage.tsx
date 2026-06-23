@@ -7,14 +7,16 @@ import { useFriends } from '@/hooks/useFriends';
 import { useTimeTree } from '@/context/TimeTreeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
+import { useDiagnosticToast, DiagnosticModal } from '@/hooks/useDiagnosticToast';
 import { supabase } from '@/lib/supabase';
 import type { Space } from '@/types/app';
 
 export default function FriendsPage() {
-  const { friends, pending, blocked, loading, acceptRequest, rejectRequest, removeFriend, blockUser } = useFriends();
+  const { friends, pending, blocked, loading, acceptRequest, rejectRequest, removeFriend, blockUser, fetchConnections } = useFriends();
   const { setCurrentSpace, refreshSpaces } = useTimeTree();
   const { user } = useAuth();
   const toast = useToast();
+  const { diagnostic, showDiagnosticError, dismissDiagnostic } = useDiagnosticToast();
   const [showAdd, setShowAdd] = useState(false);
 
   const handleChatWithFriend = useCallback(async (otherUserId: string) => {
@@ -48,6 +50,21 @@ export default function FriendsPage() {
     setCurrentSpace(newSpace as Space);
   }, [user, setCurrentSpace, refreshSpaces, toast]);
 
+  const handleFriendTagChange = useCallback(async (connectionId: string, newTag: string) => {
+    const { error } = await supabase
+      .from('friend_connections')
+      .update({ relationship_tag: newTag })
+      .eq('id', connectionId);
+
+    if (error) {
+      console.error('Friend tag mutation failed:', error);
+      showDiagnosticError(error);
+    } else {
+      toast.success(`Tag updated to ${newTag}`);
+      fetchConnections();
+    }
+  }, [fetchConnections, showDiagnosticError, toast]);
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-2xl mx-auto px-4 py-8 lg:px-8">
@@ -79,11 +96,16 @@ export default function FriendsPage() {
             onBlock={blockUser}
             onAddClick={() => setShowAdd(true)}
             onChatWithFriend={handleChatWithFriend}
+            onTagChange={handleFriendTagChange}
           />
         </div>
       </div>
 
       <AddFriendModal open={showAdd} onClose={() => setShowAdd(false)} />
+
+      {diagnostic && (
+        <DiagnosticModal payload={diagnostic} onDismiss={dismissDiagnostic} />
+      )}
     </div>
   );
 }
